@@ -64,13 +64,5 @@ Clean separation between model definitions, data pipelines, and training logic. 
 ## Dependencies
 
 - PyTorch
-- torchvision
-- numpy
-- PIL
-- matplotlib
-- yaml
-- tensorboard
 
 ---
-
-*Personal research sandbox for generative model exploration.*
