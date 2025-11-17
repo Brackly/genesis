@@ -15,6 +15,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--experiment_name', type=str, required=True)
     parser.add_argument('--epochs', type=int, required=True)
+    parser.add_argument('--train_ratio', type=float, required=True)
+    parser.add_argument('--val_ratio', type=float, required=True)
+    parser.add_argument('--test_ratio', type=float, required=True)
+
     args = parser.parse_args()
 
     logger.info(f"Initializing experiment: {args.experiment_name}")
@@ -25,7 +29,13 @@ if __name__ == '__main__':
 
     # data initialization
     fetcher = fetcher.KaggleFetcher(data_config=data_config)
-    dataloaders = dataset.get_data_loaders(config=data_loader_config, fetcher=fetcher)
+    dataloaders = dataset.get_data_loaders(
+        config=data_loader_config,
+        fetcher=fetcher,
+        train_ratio=args.train_ratio,
+        val_ratio=args.val_ratio,
+        test_ratio=args.test_ratio,
+    )
     logger.info(f"{dataloaders.keys()}")
 
     # model initialization

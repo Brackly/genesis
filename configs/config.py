@@ -14,5 +14,3 @@ class DataLoaderConfig:
     prefetch_factor: int = 0
     persistent_workers: bool = False
     pin_memory_device: str = ""
-    train : float = 0.8
-    val : float = 0.2
