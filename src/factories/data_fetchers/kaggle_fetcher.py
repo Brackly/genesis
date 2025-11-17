@@ -1,15 +1,11 @@
-import kagglehub
-from abc import ABC, abstractmethod
 import configs.config as config
 from pathlib import Path
-
-class Fetcher(ABC):
-    @abstractmethod
-    def fetch(self):
-        pass
+import kagglehub
+from src.factories.data_fetchers import Fetcher
 
 class KaggleFetcher(Fetcher):
     def __init__(self,data_config:type(config.DataConfig)):
+        super().__init__()
         self.local_save_path = None
         self.config : config.DataConfig = data_config
 
