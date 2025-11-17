@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = "==3.13.*"
 dependencies = [
     "kagglehub>=0.3.13",
+    "matplotlib>=3.10.7",
     "notebook>=7.4.7",
     "scikit-learn>=1.7.2",
     "tensorboard>=2.20.0",
