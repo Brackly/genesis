@@ -2,9 +2,9 @@ import kagglehub
 from pathlib import Path
 import shutil
 import random
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 import json
-from src.data_fetchers.base import Fetcher
+from genesis.data_fetchers.base import Fetcher
 
 
 class KaggleFetcher(Fetcher):

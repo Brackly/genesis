@@ -1,9 +1,9 @@
 import torch
-from factories.datasets import DatasetFactory,DataLoaderFactory
-from models import vanilla_vae as models
-from data_fetchers import data_fetcher as fetcher
-from configs import config
-from trainers import neural_net as trainer
+from genesis.factories.datasets import DatasetFactory,DataLoaderFactory
+from genesis.models import vanilla_vae as models
+from genesis.data_fetchers import data_fetcher as fetcher
+from genesis.configs import config
+from genesis.trainers import neural_net as trainer
 
 import argparse
 import logging
@@ -81,7 +81,7 @@ if __name__ == '__main__':
                               loss_fn=loss_fn
                               )
 
-    trainer.train(epochs=args.epochs,validation_step=5, visualization_step=10)
+    trainer.run(epochs=args.epochs, validation_step=5, visualization_step=10)
 
 
 

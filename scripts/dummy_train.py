@@ -1,7 +1,7 @@
 import torch
-from src.models import dummy_model as model
-from src.factories.datasets import datasets as dataset
-from factories import trainers as trainer
+from genesis.models import dummy_model as model
+from genesis.factories.datasets import datasets as dataset
+from genesis.factories import trainers as trainer
 
 import argparse
 import logging
@@ -37,7 +37,7 @@ if __name__ == '__main__':
                               loss_fn=loss_fn
                               )
 
-    trainer.train(epochs=args.epochs)
+    trainer.run(epochs=args.epochs)
 
 
 

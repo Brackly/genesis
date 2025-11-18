@@ -1,4 +1,5 @@
-from src.writers import base,tensorboard,wandb,composite
+from genesis.writers import tensorboard
+from genesis.writers import wandb, composite, base
 from typing import  Union
 from pathlib import Path
 

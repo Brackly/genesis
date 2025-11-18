@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from src.metrics import Metric
+from genesis.metrics import Metric
 
 
 
@@ -9,7 +9,7 @@ class BaseTrainer(ABC):
         self.metrics = list[Metric]
 
     @abstractmethod
-    def train(self ,*args ,**kwargs):
+    def run(self, *args, **kwargs):
         pass
     @abstractmethod
     def score_fn(self ,*args ,**kwargs):

@@ -5,9 +5,9 @@ import numpy as np
 from tqdm import tqdm
 from collections.abc import Callable
 
-from src.writers import base
-from src.trainers.base import BaseTrainer
-from factories.writers import writer_factory
+from genesis.writers import base
+from genesis.trainers.base import BaseTrainer
+from genesis.factories.writers import writer_factory
 
 
 class Trainer(BaseTrainer):
@@ -140,78 +140,92 @@ class Trainer(BaseTrainer):
         loss = self.loss_fn(reconstructed, images)
         return loss
 
-    def train(self,
-              epochs: int,
-              score_fn: Callable = None,
-              save_fn: Callable = None,
-              eval_fn: Callable = None,
-              visualize_fn: Callable = None,
-              visualize: bool = True,
-              validation_step: int = 10,
-              visualization_step: int = 10):
+    def train(self,score_fn: Callable,epoch:int):
+        self.model.train()
+        self.model.to(self.device)
+        epoch_train_loss = 0
+        batch_losses = []
+        gradient_norms = []
+
+        for batch in self.dataloaders['train']:
+            # Forward pass
+            loss = score_fn(batch)
+
+            # Backward pass
+            self.optimizer.zero_grad()
+            loss.backward()
+
+            # Calculate gradient norm
+            grad_norm = self._calculate_gradient_norm()
+            gradient_norms.append(grad_norm)
+
+            # Optimizer step
+            self.optimizer.step()
+
+            # Track losses
+            batch_losses.append(loss.item())
+            epoch_train_loss += loss.item()
+        # Calculate epoch statistics
+        avg_train_loss = epoch_train_loss / len(self.dataloaders['train'])
+        avg_grad_norm = float(np.mean(gradient_norms))
+        current_lr = self.optimizer.param_groups[0]['lr']
+
+        return avg_train_loss, avg_grad_norm, current_lr
+
+    def eval(self, epoch: int, score_fn: Callable) -> float:
+        """Evaluate model on validation set"""
+        self.model.eval()
+        epoch_val_loss = 0
+
+        with torch.no_grad():
+
+            for batch in self.dataloaders['val']:
+                loss = score_fn(batch)
+                epoch_val_loss += loss.item()
+
+        avg_val_loss = epoch_val_loss / len(self.dataloaders['val'])
+        self.val_losses.append(avg_val_loss)
+
+        return avg_val_loss
+
+    def run(self,
+            epochs: int,
+            train_fn: Callable = None,
+            score_fn: Callable = None,
+            save_fn: Callable = None,
+            eval_fn: Callable = None,
+            visualize_fn: Callable = None,
+            visualize: bool = True,
+            visualization_step: int = 10):
         """
         Main training loop
 
         Args:
             epochs: Number of epochs to train
+            train_fn: Function to perform training (defaults to self.train)
             score_fn: Function to calculate loss (defaults to self.score_fn)
             save_fn: Function to save model (defaults to self.save)
             eval_fn: Function to evaluate model (defaults to self.eval)
             visualize_fn: Function for visualization (defaults to self.visualize)
             visualize: Whether to perform visualization
-            validation_step: How often to validate
             visualization_step: How often to visualize
         """
         # Set default functions
         score_fn = self.score_fn if score_fn is None else score_fn
         save_fn = self.save if save_fn is None else save_fn
+        train_fn = self.train if train_fn is None else train_fn
         eval_fn = self.eval if eval_fn is None else eval_fn
         visualize_fn = self.visualize if visualize_fn is None else visualize_fn
 
         print(f"\nStarting training for {epochs} epochs...")
-        print(f"Validation every {validation_step} epochs")
         print(f"Visualization every {visualization_step} epochs")
         print("=" * 50)
 
-        for epoch in range(epochs):
+        progress_bar = tqdm(range(epochs), desc=f'Training')
+        for epoch in progress_bar:
             # Training phase
-            self.model.train()
-            epoch_train_loss = 0
-            batch_losses = []
-            gradient_norms = []
 
-            progress_bar = tqdm(self.dataloaders['train'], desc=f'Epoch {epoch + 1}/{epochs}')
-
-            for batch_idx, batch in enumerate(progress_bar):
-                # Forward pass
-                loss = score_fn(batch)
-
-                # Backward pass
-                self.optimizer.zero_grad()
-                loss.backward()
-
-                # Calculate gradient norm
-                grad_norm = self._calculate_gradient_norm()
-                gradient_norms.append(grad_norm)
-
-                # Optimizer step
-                self.optimizer.step()
-
-                # Track losses
-                batch_losses.append(loss.item())
-                epoch_train_loss += loss.item()
-
-                # Update progress bar
-                progress_bar.set_postfix({'loss': loss.item(), 'grad_norm': f'{grad_norm:.3f}'})
-
-                # Log batch metrics
-                global_step = epoch * len(self.dataloaders['train']) + batch_idx
-                self.writer.log_scalar('Loss/train_batch', loss.item(), global_step)
-
-            # Calculate epoch statistics
-            avg_train_loss = epoch_train_loss / len(self.dataloaders['train'])
-            avg_grad_norm = np.mean(gradient_norms)
-            current_lr = self.optimizer.param_groups[0]['lr']
+            avg_train_loss, avg_grad_norm, current_lr = train_fn(score_fn=score_fn,epoch=epoch)
 
             # Update history
             self.train_losses.append(avg_train_loss)
@@ -223,45 +237,47 @@ class Trainer(BaseTrainer):
             self.writer.log_scalar('Loss/train_epoch', avg_train_loss, epoch)
             self.writer.log_scalar('Metrics/gradient_norm', avg_grad_norm, epoch)
             self.writer.log_scalar('Metrics/learning_rate', current_lr, epoch)
-            self.writer.log_histogram('Loss/train_distribution', np.array(batch_losses), epoch)
 
             # Log combined losses
             self._log_training_progress(epoch)
 
             # Validation phase
-            if (epoch + 1) % validation_step == 0:
-                avg_val_loss = eval_fn(epoch, score_fn)
-                self.val_epochs.append(epoch)
-                self.metrics_history['val_loss'].append(avg_val_loss)
 
-                self.writer.log_scalar('Loss/val_epoch', avg_val_loss, epoch)
+            avg_val_loss = eval_fn(epoch, score_fn)
+            self.val_epochs.append(epoch)
+            self.metrics_history['val_loss'].append(avg_val_loss)
 
-                # Learning rate scheduler step
-                if self.scheduler is not None:
-                    self.scheduler.step(avg_val_loss)
+            self.writer.log_scalar('Loss/val_epoch', avg_val_loss, epoch)
 
-                # Check for best model
-                if avg_val_loss < self.best_val_loss:
-                    self.best_val_loss = avg_val_loss
-                    self.best_model_epochs.append(epoch)
+            # # Update progress bar
+            progress_bar.set_postfix({'train loss': avg_train_loss, 'val loss':avg_val_loss, 'grad_norm': f'{avg_grad_norm:.3f}'})
 
-                    # Test on best model
-                    test_loss = self._evaluate_test(epoch, score_fn)
-                    if test_loss is not None:
-                        self.metrics_history['test_loss'].append(test_loss)
+            # Learning rate scheduler step
+            if self.scheduler is not None:
+                self.scheduler.step(avg_val_loss)
 
-                    # Visualize best model reconstructions
-                    self._visualize_best_model(epoch, avg_val_loss, test_loss)
+            # Check for best model
+            if avg_val_loss < self.best_val_loss:
+                self.best_val_loss = avg_val_loss
+                self.best_model_epochs.append(epoch)
 
-                    # Log model weights
-                    self.writer.log_model_weights(self.model, epoch)
+                # Test on best model
+                test_loss = self._evaluate_test(epoch, score_fn)
+                if test_loss is not None:
+                    self.metrics_history['test_loss'].append(test_loss)
 
-                    # Save best model
-                    save_fn(epoch, "best_model.pt")
-                    print(f"✓ Saved best model with validation loss: {self.best_val_loss:.4f}")
+                # Visualize best model reconstructions
+                self._visualize_best_model(epoch, avg_val_loss, test_loss)
 
-                    # Log best model info
-                    self._log_best_model_info(epoch, avg_val_loss, test_loss)
+                # Log model weights
+                self.writer.log_model_weights(self.model, epoch)
+
+                # Save best model
+                save_fn(epoch, "best_model.pt")
+                print(f"✓ Saved best model with validation loss: {self.best_val_loss:.4f}")
+
+                # Log best model info
+                self._log_best_model_info(epoch, avg_val_loss, test_loss)
 
             # Visualization
             if visualize and (epoch + 1) % visualization_step == 0:
@@ -273,7 +289,7 @@ class Trainer(BaseTrainer):
 
             # Print epoch summary
             self._print_epoch_summary(epoch, epochs, avg_train_loss,
-                                      avg_val_loss if (epoch + 1) % validation_step == 0 else None,
+                                      avg_val_loss,
                                       avg_grad_norm, current_lr)
 
         # Training complete
@@ -340,7 +356,7 @@ class Trainer(BaseTrainer):
         test_loss = 0
 
         with torch.no_grad():
-            for batch in tqdm(self.dataloaders['test'], desc='Testing'):
+            for batch in self.dataloaders['test']:
                 loss = score_fn(batch)
                 test_loss += loss.item()
 
@@ -382,12 +398,13 @@ class Trainer(BaseTrainer):
 
     def _log_best_model_info(self, epoch: int, val_loss: float, test_loss: Optional[float]):
         """Log information about the best model"""
+        test_loss = f"{test_loss:.2f}" if test_loss is not None else 'N/A'
         info = f"""
         **Best Model Found at Epoch {epoch}**
-        - Validation Loss: {val_loss:.6f}
-        - Test Loss: {test_loss:.6f if test_loss else 'N/A'}
-        - Learning Rate: {self.optimizer.param_groups[0]['lr']:.6f}
-        - Training Loss: {self.train_losses[-1]:.6f}
+        - Validation Loss: {val_loss:.2f}
+        - Test Loss: {test_loss}
+        - Learning Rate: {self.optimizer.param_groups[0]['lr']:.2f}
+        - Training Loss: {self.train_losses[-1]:.2f}
         """
         self.writer.log_text('BestModel/Info', info, epoch)
 
@@ -396,9 +413,9 @@ class Trainer(BaseTrainer):
         summary = f"""
         **Training Summary**
         - Total Epochs: {len(self.train_losses)}
-        - Best Validation Loss: {self.best_val_loss:.6f}
+        - Best Validation Loss: {self.best_val_loss:.2f}
         - Best Model Epochs: {self.best_model_epochs}
-        - Final Test Loss: {self.test_losses[-1]:.6f if self.test_losses else 'N/A'}
+        - Final Test Loss: {self.test_losses[-1]:.2f if self.test_losses else 'N/A'}
         """
         self.writer.log_text('Training/Summary', summary)
 
@@ -410,7 +427,7 @@ class Trainer(BaseTrainer):
         if val_loss is not None:
             print(f"  Val Loss: {val_loss:.4f}")
         print(f"  Gradient Norm: {grad_norm:.3f}")
-        print(f"  Learning Rate: {lr:.6f}")
+        print(f"  Learning Rate: {lr:.2f}")
         print("-" * 50)
 
     def save(self, epoch: int, model_name: str):
@@ -429,20 +446,6 @@ class Trainer(BaseTrainer):
         save_path = self.exp_dir / f'{model_name}'
         torch.save(checkpoint, save_path)
 
-    def eval(self, epoch: int, score_fn: Callable) -> float:
-        """Evaluate model on validation set"""
-        self.model.eval()
-        epoch_val_loss = 0
-
-        with torch.no_grad():
-            for batch in tqdm(self.dataloaders['val'], desc='Validation'):
-                loss = score_fn(batch)
-                epoch_val_loss += loss.item()
-
-        avg_val_loss = epoch_val_loss / len(self.dataloaders['val'])
-        self.val_losses.append(avg_val_loss)
-
-        return avg_val_loss
 
     def visualize(self, epoch: int):
         """Visualize current model reconstructions"""

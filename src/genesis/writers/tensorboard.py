@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from src.writers.base import BaseWriter
+from genesis.writers.base import BaseWriter
 
 class TensorBoardWriter(BaseWriter):
     """TensorBoard implementation of BaseWriter"""
