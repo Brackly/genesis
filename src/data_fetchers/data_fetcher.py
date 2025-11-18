@@ -18,6 +18,7 @@ class KaggleFetcher(Fetcher):
         super().__init__()
         self.data_path = Path().cwd() / "data"
         self.config = data_config
+        self.data_path_extension = data_config.kaggle_dataset_path_suffix
 
         # Split ratios
         self.train_ratio = 0.75
@@ -45,11 +46,14 @@ class KaggleFetcher(Fetcher):
                 print(f"Using existing organized dataset at: {self.data_path.exists}")
                 self.print_final_stats()
                 return self.data_path
+            elif save_path is not None and Path(save_path).exists():
+                print(f"Using existing organized dataset at: {save_path}")
+                save_path = Path(save_path)
 
         # Download dataset
         if save_path is None:
             save_path = kagglehub.dataset_download(self.config.kaggle_dataset_path)
-            self.data_path = Path(save_path) / self.config.kaggle_dataset_path_suffix
+            save_path = Path(save_path) / self.config.kaggle_dataset_path_suffix
             print(f"Dataset downloaded to: {self.data_path}")
 
         if reorganize:
@@ -125,8 +129,10 @@ class KaggleFetcher(Fetcher):
             force_recreate: If True, recreate even if organized dataset exists
             save_path: Alternative path to local data folder
         """
+        self.data_path.mkdir(parents=True, exist_ok=True)
         # Analyze current structure
         save_path = Path(save_path) if isinstance(save_path,str) else save_path
+
         class_paths, min_count, class_counts = self.analyze_dataset(save_path=save_path)
 
         # Calculate samples per split (using minimum for uniform distribution)
@@ -156,15 +162,6 @@ class KaggleFetcher(Fetcher):
 
         # Create new directory structure
         organized_path = self.data_path
-
-        # Check if already exists
-        if organized_path.exists() and not force_recreate:
-            print(f"Organized dataset already exists at {organized_path}. ")
-            self.data_path = organized_path
-            return
-        else:
-            print("Removing existing organized dataset...")
-            shutil.rmtree(organized_path)
 
         print("\n" + "=" * 50)
         print("REORGANIZING DATASET")

@@ -18,9 +18,10 @@ if __name__ == '__main__':
     parser.add_argument('--train_ratio', type=float, required=True)
     parser.add_argument('--val_ratio', type=float, required=True)
     parser.add_argument('--test_ratio', type=float, required=True)
-    parser.add_argument('--use_existing', type=bool, required=True,default=False)
+    parser.add_argument('--use_existing', type=bool, required=True,default=True)
     parser.add_argument('--batch_size', type=int, required=True, default=1000)
     parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--save_path', type=str, required=True)
 
     args = parser.parse_args()
 
@@ -36,7 +37,7 @@ if __name__ == '__main__':
     # data initialization
     print("Step 1: Fetching and organizing data...")
     fetcher = fetcher.KaggleFetcher(data_config)
-    data_path = fetcher.fetch(reorganize=True, use_existing=args.use_existing)
+    data_path = fetcher.fetch(reorganize=True, use_existing=args.use_existing,save_path=args.save_path)
 
     # Step 2: Create data_fetchers
     print("\nStep 2: Creating data_fetchers...")

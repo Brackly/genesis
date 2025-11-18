@@ -1,11 +1,10 @@
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List,  Union
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from base import BaseWriter
+from src.writers.base import BaseWriter
 
 class TensorBoardWriter(BaseWriter):
     """TensorBoard implementation of BaseWriter"""

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Any, Union
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from base import BaseWriter
+from src.writers.base import BaseWriter
 
 
 class CompositeWriter(BaseWriter):
