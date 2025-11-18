@@ -410,12 +410,13 @@ class Trainer(BaseTrainer):
 
     def _log_final_summary(self):
         """Log final training summary"""
+        test_losses = f"{self.test_losses[-1]:.2f}" if self.test_losses else 'N/A'
         summary = f"""
         **Training Summary**
         - Total Epochs: {len(self.train_losses)}
         - Best Validation Loss: {self.best_val_loss:.2f}
         - Best Model Epochs: {self.best_model_epochs}
-        - Final Test Loss: {self.test_losses[-1]:.2f if self.test_losses else 'N/A'}
+        - Final Test Loss: {test_losses} 
         """
         self.writer.log_text('Training/Summary', summary)
 
