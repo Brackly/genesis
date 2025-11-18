@@ -1,9 +1,9 @@
 import torch
-from src.factories.data_fetchers import kaggle_fetcher as fetcher
-from src.factories.datasets import animal_10 as dataset
-from src.factories.models import vanilla_vae as models
-from src.factories.trainers import vae_vanilla as trainer
+from factories.datasets import DatasetFactory,DataLoaderFactory
+from models import vanilla_vae as models
+from data_fetchers import data_fetcher as fetcher
 from configs import config
+from trainers import neural_net as trainer
 
 import argparse
 import logging
@@ -18,6 +18,9 @@ if __name__ == '__main__':
     parser.add_argument('--train_ratio', type=float, required=True)
     parser.add_argument('--val_ratio', type=float, required=True)
     parser.add_argument('--test_ratio', type=float, required=True)
+    parser.add_argument('--use_existing', type=bool, required=True,default=False)
+    parser.add_argument('--batch_size', type=int, required=True, default=1000)
+    parser.add_argument('--num_workers', type=int, default=0)
 
     args = parser.parse_args()
 
@@ -27,16 +30,39 @@ if __name__ == '__main__':
     data_config = config.DataConfig()
     data_loader_config = config.DataLoaderConfig()
 
+
+
+
     # data initialization
-    fetcher = fetcher.KaggleFetcher(data_config=data_config)
-    dataloaders = dataset.get_data_loaders(
-        config=data_loader_config,
-        fetcher=fetcher,
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        test_ratio=args.test_ratio,
+    print("Step 1: Fetching and organizing data...")
+    fetcher = fetcher.KaggleFetcher(data_config)
+    data_path = fetcher.fetch(reorganize=True, use_existing=args.use_existing)
+
+    # Step 2: Create data_fetchers
+    print("\nStep 2: Creating data_fetchers...")
+    dataset_factory = DatasetFactory(
+        data_path=data_path,
     )
-    logger.info(f"{dataloaders.keys()}")
+
+    datasets_dict = dataset_factory.create_datasets()
+
+    # Step 3: Create dataloaders
+    print("\nStep 3: Creating dataloaders...")
+    dataloader_factory = DataLoaderFactory(
+        batch_size=args.batch_size,
+        num_workers=args.num_workers
+    )
+    dataloaders = dataloader_factory.create_dataloaders(datasets_dict)
+
+    # Get number of classes
+    num_classes = dataset_factory.get_num_classes()
+
+    print("\n" + "=" * 50)
+    print("DATA PIPELINE SETUP COMPLETE")
+    print("=" * 50)
+    print(f"Number of classes: {num_classes}")
+    print(f"Batch size: {args.batch_size}")
+    print(f"Dataloaders created: {list(dataloaders.keys())}")
 
     # model initialization
     model = models.VanillaVAE()
@@ -54,7 +80,7 @@ if __name__ == '__main__':
                               loss_fn=loss_fn
                               )
 
-    trainer.train(epochs=args.epochs)
+    trainer.train(epochs=args.epochs,validation_step=5, visualization_step=10)
 
 
 

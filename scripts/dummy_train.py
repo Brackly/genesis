@@ -1,7 +1,7 @@
 import torch
-from src.factories.datasets import dummy as dataset
-from src.factories.models import dummy as models
-from src.factories.trainers import vae_vanilla as trainer
+from src.models import dummy_model as model
+from src.factories.datasets import datasets as dataset
+from factories import trainers as trainer
 
 import argparse
 import logging
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     logger.info(f"{dataloaders.keys()}")
 
     # model initialization
-    model = models.DummyModel()
+    model = model.DummyModel()
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = None
     loss_fn = torch.nn.MSELoss()

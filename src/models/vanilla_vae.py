@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 
+
 class Encoder(nn.Module):
     """Degrades/encodes the image progressively"""
 
