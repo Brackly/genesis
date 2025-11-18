@@ -47,10 +47,7 @@ class DatasetFactory:
         self.data_path = data_path
         self.image_size = image_size
         self.num_channels = num_channels
-        self.base_transforms = [
-            transforms.Resize((self.image_size, self.image_size)),
-            transforms.ToTensor(),
-        ]
+
 
         # Define transforms for each split
         self.train_transform = self._get_train_transform()
@@ -59,47 +56,48 @@ class DatasetFactory:
 
     def _get_train_transform(self) -> transforms.Compose:
         """Get training transforms with data augmentation"""
-        transform_list = self.base_transforms
-
-        #     [
-        #     transforms.Resize((self.image_size, self.image_size)),
-        #     transforms.RandomHorizontalFlip(p=0.5),
-        #     transforms.RandomRotation(degrees=10),
-        #     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-        #     transforms.ToTensor(),
-        # ]
+        transform_list = [
+            transforms.Resize((self.image_size, self.image_size)),
+            # transforms.RandomHorizontalFlip(p=0.5),
+            # transforms.RandomRotation(degrees=10),
+            # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            transforms.ToTensor(),
+        ]
 
         # Add grayscale conversion if single channel
         if self.num_channels == 1:
             transform_list.insert(0, transforms.Grayscale(num_output_channels=1))
 
         # Normalize based on number of channels
-        if self.num_channels == 1:
-            # Grayscale normalization
-            transform_list.append(transforms.Normalize(mean=[0.5], std=[0.5]))
-        else:
-            # RGB ImageNet normalization
-            transform_list.append(
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            )
+        # if self.num_channels == 1:
+        #     # Grayscale normalization
+        #     transform_list.append(transforms.Normalize(mean=[0.5], std=[0.5]))
+        # else:
+        #     # RGB ImageNet normalization
+        #     transform_list.append(
+        #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        #     )
 
         return transforms.Compose(transform_list)
 
     def _get_val_transform(self) -> transforms.Compose:
         """Get validation transforms without augmentation"""
-        transform_list = self.base_transforms
+        transform_list =  [
+            transforms.Resize((self.image_size, self.image_size)),
+            transforms.ToTensor(),
+        ]
 
         # Add grayscale conversion if single channel
         if self.num_channels == 1:
             transform_list.insert(0, transforms.Grayscale(num_output_channels=1))
 
         # Normalize
-        if self.num_channels == 1:
-            transform_list.append(transforms.Normalize(mean=[0.5], std=[0.5]))
-        else:
-            transform_list.append(
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            )
+        # if self.num_channels == 1:
+        #     transform_list.append(transforms.Normalize(mean=[0.5], std=[0.5]))
+        # else:
+        #     transform_list.append(
+        #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        #     )
 
         return transforms.Compose(transform_list)
 
