@@ -4,11 +4,11 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from collections.abc import Callable
-
+import matplotlib.pyplot as plt
 from genesis.writers import base
 from genesis.trainers.base import BaseTrainer
 from genesis.factories.writers import writer_factory
-
+import umap
 
 class Trainer(BaseTrainer):
     """Refactored Trainer with separated logging concerns"""
@@ -55,6 +55,9 @@ class Trainer(BaseTrainer):
             self.writer = writer_factory('tensorboard', self.exp_dir, 'logs')
         else:
             self.writer = writer
+
+        self.patience = 10
+        self.patience_counter = 0
 
         # Training state
         self.best_val_loss = float('inf')
@@ -136,7 +139,7 @@ class Trainer(BaseTrainer):
         """Calculate loss for a batch"""
         images, _ = batch
         images = images.to(self.device)
-        reconstructed = self.model(images)
+        reconstructed,_ = self.model(images)
         loss = self.loss_fn(reconstructed, images)
         return loss
 
@@ -146,8 +149,8 @@ class Trainer(BaseTrainer):
         epoch_train_loss = 0
         batch_losses = []
         gradient_norms = []
-
-        for batch in self.dataloaders['train']:
+        progress_bar = tqdm( self.dataloaders['train'], desc = f'Training Epoch {epoch+1}')
+        for idx, batch in enumerate(progress_bar):
             # Forward pass
             loss = score_fn(batch)
 
@@ -165,10 +168,12 @@ class Trainer(BaseTrainer):
             # Track losses
             batch_losses.append(loss.item())
             epoch_train_loss += loss.item()
+
         # Calculate epoch statistics
         avg_train_loss = epoch_train_loss / len(self.dataloaders['train'])
         avg_grad_norm = float(np.mean(gradient_norms))
         current_lr = self.optimizer.param_groups[0]['lr']
+        progress_bar.set_postfix({'Train Loss': avg_train_loss, 'Grad Norm': avg_grad_norm, 'LR': current_lr})
 
         return avg_train_loss, avg_grad_norm, current_lr
 
@@ -178,12 +183,13 @@ class Trainer(BaseTrainer):
         epoch_val_loss = 0
 
         with torch.no_grad():
-
-            for batch in self.dataloaders['val']:
+            progress_bar = tqdm(self.dataloaders['val'], desc=f'Validating Epoch {epoch + 1}')
+            for batch in progress_bar:
                 loss = score_fn(batch)
                 epoch_val_loss += loss.item()
 
         avg_val_loss = epoch_val_loss / len(self.dataloaders['val'])
+        progress_bar.set_postfix({'Val Loss': avg_val_loss})
         self.val_losses.append(avg_val_loss)
 
         return avg_val_loss
@@ -194,7 +200,6 @@ class Trainer(BaseTrainer):
             score_fn: Callable = None,
             save_fn: Callable = None,
             eval_fn: Callable = None,
-            visualize_fn: Callable = None,
             visualize: bool = True,
             visualization_step: int = 10):
         """
@@ -206,7 +211,6 @@ class Trainer(BaseTrainer):
             score_fn: Function to calculate loss (defaults to self.score_fn)
             save_fn: Function to save model (defaults to self.save)
             eval_fn: Function to evaluate model (defaults to self.eval)
-            visualize_fn: Function for visualization (defaults to self.visualize)
             visualize: Whether to perform visualization
             visualization_step: How often to visualize
         """
@@ -215,14 +219,12 @@ class Trainer(BaseTrainer):
         save_fn = self.save if save_fn is None else save_fn
         train_fn = self.train if train_fn is None else train_fn
         eval_fn = self.eval if eval_fn is None else eval_fn
-        visualize_fn = self.visualize if visualize_fn is None else visualize_fn
 
         print(f"\nStarting training for {epochs} epochs...")
         print(f"Visualization every {visualization_step} epochs")
         print("=" * 50)
 
-        progress_bar = tqdm(range(epochs), desc=f'Training')
-        for epoch in progress_bar:
+        for epoch in range(epochs):
             # Training phase
 
             avg_train_loss, avg_grad_norm, current_lr = train_fn(score_fn=score_fn,epoch=epoch)
@@ -235,11 +237,8 @@ class Trainer(BaseTrainer):
 
             # Log epoch metrics
             self.writer.log_scalar('Loss/train_epoch', avg_train_loss, epoch)
-            self.writer.log_scalar('Metrics/gradient_norm', avg_grad_norm, epoch)
-            self.writer.log_scalar('Metrics/learning_rate', current_lr, epoch)
-
-            # Log combined losses
-            self._log_training_progress(epoch)
+            # self.writer.log_scalar('Metrics/gradient_norm', avg_grad_norm, epoch)
+            # self.writer.log_scalar('Metrics/learning_rate', current_lr, epoch)
 
             # Validation phase
 
@@ -250,7 +249,6 @@ class Trainer(BaseTrainer):
             self.writer.log_scalar('Loss/val_epoch', avg_val_loss, epoch)
 
             # # Update progress bar
-            progress_bar.set_postfix({'train loss': avg_train_loss, 'val loss':avg_val_loss, 'grad_norm': f'{avg_grad_norm:.3f}'})
 
             # Learning rate scheduler step
             if self.scheduler is not None:
@@ -270,18 +268,19 @@ class Trainer(BaseTrainer):
                 self._visualize_best_model(epoch, avg_val_loss, test_loss)
 
                 # Log model weights
-                self.writer.log_model_weights(self.model, epoch)
+                # self.writer.log_model_weights(self.model, epoch)
 
                 # Save best model
                 save_fn(epoch, "best_model.pt")
-                print(f"✓ Saved best model with validation loss: {self.best_val_loss:.4f}")
+                print(f"✓ Saved best model with validation loss: {self.best_val_loss:.4f} ")
 
                 # Log best model info
                 self._log_best_model_info(epoch, avg_val_loss, test_loss)
-
-            # Visualization
-            if visualize and (epoch + 1) % visualization_step == 0:
-                visualize_fn(epoch)
+            else:
+                self.patience_counter += 1
+                if self.patience_counter >= self.patience:
+                    print(f"Early stopping triggered after {epoch + 1} epochs")
+                    break
 
             # Checkpoint saving
             if (epoch + 1) % 50 == 0:
@@ -290,6 +289,7 @@ class Trainer(BaseTrainer):
             # Print epoch summary
             self._print_epoch_summary(epoch, epochs, avg_train_loss,
                                       avg_val_loss,
+                                      test_loss,
                                       avg_grad_norm, current_lr)
 
         # Training complete
@@ -311,41 +311,96 @@ class Trainer(BaseTrainer):
                 total_norm += param_norm.item() ** 2
         return total_norm ** 0.5
 
-    def _log_training_progress(self, epoch: int):
-        """Log training progress with combined loss curves"""
-        import matplotlib.pyplot as plt
+    def _visualize_bottleneck(self, batch_bottle_neck, epoch: int):
+        """Visualize the autoencoder bottleneck representations using UMAP"""
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Convert to numpy if it's a tensor
+        if isinstance(batch_bottle_neck, torch.Tensor):
+            bottleneck_np = batch_bottle_neck.cpu().detach().numpy()
+        else:
+            bottleneck_np = batch_bottle_neck
 
-        # Plot training loss
-        if self.train_losses:
-            ax.plot(range(len(self.train_losses)), self.train_losses,
-                    label='Train Loss', color='blue', linewidth=2)
+        # Flatten bottleneck if it has more than 2 dimensions
+        if len(bottleneck_np.shape) > 2:
+            bottleneck_np = bottleneck_np.reshape(bottleneck_np.shape[0], -1)
 
-        # Plot validation loss at actual epochs
-        if self.val_losses and self.val_epochs:
-            ax.plot(self.val_epochs, self.val_losses,
-                    label='Val Loss', color='orange', marker='o', markersize=6, linewidth=2)
+        # Create UMAP reducer
+        reducer = umap.UMAP(
+            n_neighbors=min(15, len(bottleneck_np) - 1),  # Adjust for small samples
+            min_dist=0.1,
+            n_components=2,
+            random_state=42
+        )
 
-        # Plot test losses at best model points
-        if self.test_losses and self.best_model_epochs:
-            ax.scatter(self.best_model_epochs, self.test_losses,
-                       label='Test Loss (at best)', color='green', marker='*', s=200, zorder=5)
+        # Fit and transform the bottleneck representations
+        embedding = reducer.fit_transform(bottleneck_np)
 
-        ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        ax.set_title('Training Progress')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        # Create figure with subplots
+        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
-        self.writer.log_figure('Losses/progress', fig, epoch)
+        # Plot 1: UMAP colored by class index
+        scatter1 = axes[0].scatter(
+            embedding[:, 0],
+            embedding[:, 1],
+            c=range(len(embedding)),  # Color by class index
+            cmap='tab10',
+            s=100,
+            alpha=0.8,
+            edgecolors='black',
+            linewidth=1
+        )
+        axes[0].set_title(f'UMAP of Bottleneck - Colored by Class\nEpoch {epoch}')
+        axes[0].set_xlabel('UMAP 1')
+        axes[0].set_ylabel('UMAP 2')
 
-        # Also log as scalars for easy comparison
-        if self.val_losses:
-            self.writer.log_scalars('Losses/all', {
-                'train': self.train_losses[-1],
-                'validation': self.val_losses[-1]
-            }, epoch)
+        # Add colorbar for class labels
+        cbar1 = plt.colorbar(scatter1, ax=axes[0])
+        cbar1.set_label('Class Index')
+
+        # Add class labels as annotations
+        for i, (x, y) in enumerate(embedding):
+            axes[0].annotate(str(i), (x, y),
+                             textcoords="offset points",
+                             xytext=(0, 5),
+                             ha='center',
+                             fontsize=8)
+
+        # Plot 2: UMAP colored by bottleneck magnitude (L2 norm)
+        bottleneck_magnitude = np.linalg.norm(bottleneck_np, axis=1)
+        scatter2 = axes[1].scatter(
+            embedding[:, 0],
+            embedding[:, 1],
+            c=bottleneck_magnitude,
+            cmap='viridis',
+            s=100,
+            alpha=0.8,
+            edgecolors='black',
+            linewidth=1
+        )
+        axes[1].set_title(f'UMAP of Bottleneck - Colored by Magnitude\nEpoch {epoch}')
+        axes[1].set_xlabel('UMAP 1')
+        axes[1].set_ylabel('UMAP 2')
+
+        # Add colorbar for magnitude
+        cbar2 = plt.colorbar(scatter2, ax=axes[1])
+        cbar2.set_label('Bottleneck L2 Norm')
+
+        # Add statistics text
+        stats_text = f'Bottleneck dim: {bottleneck_np.shape[1]}\n'
+        stats_text += f'Mean magnitude: {bottleneck_magnitude.mean():.3f}\n'
+        stats_text += f'Std magnitude: {bottleneck_magnitude.std():.3f}'
+
+        fig.text(0.5, 0.02, stats_text, ha='center', fontsize=10,
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        plt.suptitle(f'Latent Space Visualization - Epoch {epoch}', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+
+        # Log the figure
+        self.writer.log_figure('Bottleneck/UMAP_visualization', fig, epoch)
+        plt.close(fig)  # Close to free memory
+
+
 
     def _evaluate_test(self, epoch: int, score_fn: Callable) -> Optional[float]:
         """Evaluate on test set"""
@@ -356,7 +411,8 @@ class Trainer(BaseTrainer):
         test_loss = 0
 
         with torch.no_grad():
-            for batch in self.dataloaders['test']:
+            progress_bar = tqdm(self.dataloaders['test'], desc=f'Testing Epoch {epoch + 1}')
+            for batch in progress_bar:
                 loss = score_fn(batch)
                 test_loss += loss.item()
 
@@ -376,16 +432,19 @@ class Trainer(BaseTrainer):
         with torch.no_grad():
             originals = []
             reconstructions = []
+            bottlenecks = []
 
             for class_idx in sorted(self.class_samples.keys())[:self.num_classes]:
                 original = self.class_samples[class_idx]
-                reconstructed = self.model(original)
+                reconstructed,bottleneck = self.model(original)
                 originals.append(original)
                 reconstructions.append(reconstructed)
+                bottlenecks.append(bottleneck)
 
             if originals:
                 originals = torch.cat(originals, dim=0)
                 reconstructions = torch.cat(reconstructions, dim=0)
+                bottlenecks = torch.cat(bottlenecks, dim=0)
 
                 title = f"Epoch {epoch} | Val: {val_loss:.4f}"
                 if test_loss is not None:
@@ -395,6 +454,8 @@ class Trainer(BaseTrainer):
                     originals, reconstructions, epoch,
                     num_samples=len(originals), title=title
                 )
+
+                self._visualize_bottleneck(batch_bottle_neck=bottlenecks,epoch=epoch)
 
     def _log_best_model_info(self, epoch: int, val_loss: float, test_loss: Optional[float]):
         """Log information about the best model"""
@@ -421,12 +482,14 @@ class Trainer(BaseTrainer):
         self.writer.log_text('Training/Summary', summary)
 
     def _print_epoch_summary(self, epoch: int, total_epochs: int, train_loss: float,
-                             val_loss: Optional[float], grad_norm: float, lr: float):
+                             val_loss: Optional[float], test_loss:Optional[float],grad_norm: float, lr: float):
         """Print epoch summary to console"""
         print(f"\nEpoch {epoch + 1}/{total_epochs}")
         print(f"  Train Loss: {train_loss:.4f}")
         if val_loss is not None:
             print(f"  Val Loss: {val_loss:.4f}")
+        if test_loss is not None:
+            print(f"  Test Loss: {test_loss:.4f}")
         print(f"  Gradient Norm: {grad_norm:.3f}")
         print(f"  Learning Rate: {lr:.2f}")
         print("-" * 50)
@@ -446,22 +509,3 @@ class Trainer(BaseTrainer):
 
         save_path = self.exp_dir / f'{model_name}'
         torch.save(checkpoint, save_path)
-
-
-    def visualize(self, epoch: int):
-        """Visualize current model reconstructions"""
-        self.model.eval()
-
-        with torch.no_grad():
-            # Get a sample batch
-            sample_batch = next(iter(self.dataloaders['val']))
-            sample_images = sample_batch[0][:8].to(self.device)
-
-            # Generate reconstructions
-            sample_recon = self.model(sample_images)
-
-            # Log comparison
-            self.writer.log_reconstruction_comparison(
-                sample_images, sample_recon, epoch,
-                num_samples=8, title=f"Epoch_{epoch}"
-            )

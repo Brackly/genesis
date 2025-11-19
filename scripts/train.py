@@ -81,7 +81,7 @@ if __name__ == '__main__':
                               loss_fn=loss_fn
                               )
 
-    trainer.run(epochs=args.epochs, validation_step=5, visualization_step=10)
+    trainer.run(epochs=args.epochs,visualization_step=10)
 
 
 

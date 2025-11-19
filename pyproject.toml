@@ -3,7 +3,7 @@ name = "genesis"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.12.*"
+requires-python = "==3.13.*"
 dependencies = [
     "kagglehub>=0.3.13",
     "matplotlib>=3.10.7",
@@ -12,6 +12,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "torch",
     "torchvision",
+    "umap-learn>=0.5.9.post2",
     "wandb>=0.23.0",
 ]
 
