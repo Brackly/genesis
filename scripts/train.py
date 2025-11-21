@@ -1,10 +1,10 @@
 import torch
 from genesis.factories.datasets import DatasetFactory,DataLoaderFactory
-from genesis.models import vanilla_vae as models
+from genesis.models import vanilla_autoencoder as models
 from genesis.data_fetchers import data_fetcher as fetcher
 from genesis.configs import config
 from genesis.trainers import neural_net as trainer
-
+from datetime import datetime
 import argparse
 import logging
 
@@ -13,11 +13,8 @@ logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--experiment_name', type=str, required=True)
     parser.add_argument('--epochs', type=int, required=True)
-    parser.add_argument('--train_ratio', type=float, required=True)
-    parser.add_argument('--val_ratio', type=float, required=True)
-    parser.add_argument('--test_ratio', type=float, required=True)
+    parser.add_argument('--subset_fraction', type=float, required=True)
     parser.add_argument('--use_existing', type=bool, required=True,default=True)
     parser.add_argument('--batch_size', type=int, required=True, default=1000)
     parser.add_argument('--num_workers', type=int, default=0)
@@ -45,7 +42,7 @@ if __name__ == '__main__':
         data_path=data_path,
     )
 
-    datasets_dict = dataset_factory.create_datasets()
+    datasets_dict = dataset_factory.create_datasets(subset_fraction=args.subset_fraction)
 
     # Step 3: Create dataloaders
     print("\nStep 3: Creating dataloaders...")
@@ -72,8 +69,9 @@ if __name__ == '__main__':
     loss_fn = torch.nn.MSELoss()
 
     # training initialization
+    experiment_name = f"{model.name}_{datetime.now().strftime('%Y_%m_%d_%H:%M:%S')}"
     logger.info(f"Initializing training..")
-    trainer = trainer.Trainer(experiment_name=args.experiment_name,
+    trainer = trainer.Trainer(experiment_name=model.name,
                               model=model,
                               optimizer=optimizer,
                               dataloaders=dataloaders,

@@ -4,11 +4,10 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from collections.abc import Callable
-import matplotlib.pyplot as plt
 from genesis.writers import base
 from genesis.trainers.base import BaseTrainer
 from genesis.factories.writers import writer_factory
-import umap
+from genesis.utils import helpers
 
 class Trainer(BaseTrainer):
     """Refactored Trainer with separated logging concerns"""
@@ -89,7 +88,7 @@ class Trainer(BaseTrainer):
 
         with torch.no_grad():
             # Try validation set first
-            for batch in self.dataloaders.get('val', []):
+            for batch in self.dataloaders.get('test', []):
                 images, labels = batch
                 for i in range(len(labels)):
                     label = labels[i].item()
@@ -98,9 +97,9 @@ class Trainer(BaseTrainer):
                     if len(class_samples) == self.num_classes:
                         return class_samples
 
-            # Fall back to train set if needed
+            # Fall back to val set if needed
             if len(class_samples) < self.num_classes:
-                for batch in self.dataloaders.get('train', []):
+                for batch in self.dataloaders.get('val', []):
                     images, labels = batch
                     for i in range(len(labels)):
                         label = labels[i].item()
@@ -237,8 +236,7 @@ class Trainer(BaseTrainer):
 
             # Log epoch metrics
             self.writer.log_scalar('Loss/train_epoch', avg_train_loss, epoch)
-            # self.writer.log_scalar('Metrics/gradient_norm', avg_grad_norm, epoch)
-            # self.writer.log_scalar('Metrics/learning_rate', current_lr, epoch)
+            self._log_training_progress(epoch)
 
             # Validation phase
 
@@ -311,94 +309,7 @@ class Trainer(BaseTrainer):
                 total_norm += param_norm.item() ** 2
         return total_norm ** 0.5
 
-    def _visualize_bottleneck(self, batch_bottle_neck, epoch: int):
-        """Visualize the autoencoder bottleneck representations using UMAP"""
 
-        # Convert to numpy if it's a tensor
-        if isinstance(batch_bottle_neck, torch.Tensor):
-            bottleneck_np = batch_bottle_neck.cpu().detach().numpy()
-        else:
-            bottleneck_np = batch_bottle_neck
-
-        # Flatten bottleneck if it has more than 2 dimensions
-        if len(bottleneck_np.shape) > 2:
-            bottleneck_np = bottleneck_np.reshape(bottleneck_np.shape[0], -1)
-
-        # Create UMAP reducer
-        reducer = umap.UMAP(
-            n_neighbors=min(15, len(bottleneck_np) - 1),  # Adjust for small samples
-            min_dist=0.1,
-            n_components=2,
-            random_state=42
-        )
-
-        # Fit and transform the bottleneck representations
-        embedding = reducer.fit_transform(bottleneck_np)
-
-        # Create figure with subplots
-        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-
-        # Plot 1: UMAP colored by class index
-        scatter1 = axes[0].scatter(
-            embedding[:, 0],
-            embedding[:, 1],
-            c=range(len(embedding)),  # Color by class index
-            cmap='tab10',
-            s=100,
-            alpha=0.8,
-            edgecolors='black',
-            linewidth=1
-        )
-        axes[0].set_title(f'UMAP of Bottleneck - Colored by Class\nEpoch {epoch}')
-        axes[0].set_xlabel('UMAP 1')
-        axes[0].set_ylabel('UMAP 2')
-
-        # Add colorbar for class labels
-        cbar1 = plt.colorbar(scatter1, ax=axes[0])
-        cbar1.set_label('Class Index')
-
-        # Add class labels as annotations
-        for i, (x, y) in enumerate(embedding):
-            axes[0].annotate(str(i), (x, y),
-                             textcoords="offset points",
-                             xytext=(0, 5),
-                             ha='center',
-                             fontsize=8)
-
-        # Plot 2: UMAP colored by bottleneck magnitude (L2 norm)
-        bottleneck_magnitude = np.linalg.norm(bottleneck_np, axis=1)
-        scatter2 = axes[1].scatter(
-            embedding[:, 0],
-            embedding[:, 1],
-            c=bottleneck_magnitude,
-            cmap='viridis',
-            s=100,
-            alpha=0.8,
-            edgecolors='black',
-            linewidth=1
-        )
-        axes[1].set_title(f'UMAP of Bottleneck - Colored by Magnitude\nEpoch {epoch}')
-        axes[1].set_xlabel('UMAP 1')
-        axes[1].set_ylabel('UMAP 2')
-
-        # Add colorbar for magnitude
-        cbar2 = plt.colorbar(scatter2, ax=axes[1])
-        cbar2.set_label('Bottleneck L2 Norm')
-
-        # Add statistics text
-        stats_text = f'Bottleneck dim: {bottleneck_np.shape[1]}\n'
-        stats_text += f'Mean magnitude: {bottleneck_magnitude.mean():.3f}\n'
-        stats_text += f'Std magnitude: {bottleneck_magnitude.std():.3f}'
-
-        fig.text(0.5, 0.02, stats_text, ha='center', fontsize=10,
-                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-
-        plt.suptitle(f'Latent Space Visualization - Epoch {epoch}', fontsize=14, fontweight='bold')
-        plt.tight_layout()
-
-        # Log the figure
-        self.writer.log_figure('Bottleneck/UMAP_visualization', fig, epoch)
-        plt.close(fig)  # Close to free memory
 
 
 
@@ -421,6 +332,16 @@ class Trainer(BaseTrainer):
         self.writer.log_scalar('Loss/test_at_best', avg_test_loss, epoch)
 
         return avg_test_loss
+
+    def _log_training_progress(self, epoch: int):
+        """Log training progress with combined loss curves"""
+
+        # Also log as scalars for easy comparison
+        if self.val_losses:
+            self.writer.log_scalars('Losses/all', {
+                'train': self.train_losses[-1],
+                'validation': self.val_losses[-1]
+            }, epoch)
 
     def _visualize_best_model(self, epoch: int, val_loss: float, test_loss: Optional[float]):
         """Visualize reconstructions for the best model"""
@@ -455,7 +376,7 @@ class Trainer(BaseTrainer):
                     num_samples=len(originals), title=title
                 )
 
-                self._visualize_bottleneck(batch_bottle_neck=bottlenecks,epoch=epoch)
+                helpers.visualize_bottleneck(self.model,self.dataloaders['test'], self.writer,epoch)
 
     def _log_best_model_info(self, epoch: int, val_loss: float, test_loss: Optional[float]):
         """Log information about the best model"""
@@ -464,7 +385,7 @@ class Trainer(BaseTrainer):
         **Best Model Found at Epoch {epoch}**
         - Validation Loss: {val_loss:.2f}
         - Test Loss: {test_loss}
-        - Learning Rate: {self.optimizer.param_groups[0]['lr']:.2f}
+        - Learning Rate: {self.optimizer.param_groups[0]['lr']:.6f}
         - Training Loss: {self.train_losses[-1]:.2f}
         """
         self.writer.log_text('BestModel/Info', info, epoch)
@@ -491,7 +412,7 @@ class Trainer(BaseTrainer):
         if test_loss is not None:
             print(f"  Test Loss: {test_loss:.4f}")
         print(f"  Gradient Norm: {grad_norm:.3f}")
-        print(f"  Learning Rate: {lr:.2f}")
+        print(f"  Learning Rate: {lr:.6f}")
         print("-" * 50)
 
     def save(self, epoch: int, model_name: str):

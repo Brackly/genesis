@@ -106,6 +106,7 @@ class DatasetFactory:
         return self._get_val_transform()
 
     def create_datasets(self,
+                        subset_fraction: Optional[float] = None,
                         custom_train_transform: Optional[Callable] = None,
                         custom_val_transform: Optional[Callable] = None,
                         custom_test_transform: Optional[Callable] = None) -> Dict[str, datasets.ImageFolder]:
@@ -113,6 +114,7 @@ class DatasetFactory:
         Create data_fetchers for all splits
 
         Args:
+            subset_fraction: Optional[float] to use a fraction of the dataset
             custom_train_transform: Optional custom transform for training
             custom_val_transform: Optional custom transform for validation
             custom_test_transform: Optional custom transform for testing
@@ -139,6 +141,19 @@ class DatasetFactory:
                     root=split_path,
                     transform=transform
                 )
+                original_size = len(dataset)
+                classes = dataset.classes
+                class_to_idx = dataset.class_to_idx
+
+                if subset_fraction is not None and 0 < subset_fraction < 1:
+                    subset_size = int(len(dataset) * subset_fraction)
+                    indices = torch.randperm(len(dataset))[:subset_size]
+                    dataset = torch.utils.data.Subset(dataset, indices)
+
+                    dataset.classes = classes
+                    dataset.class_to_idx = class_to_idx
+
+                    print(f"Using {subset_size}/{original_size} samples for {split}")
                 datasets_dict[split] = dataset
                 print(f"Created {split} dataset with {len(dataset)} samples from {split_path}")
             else:

@@ -59,6 +59,7 @@ class VanillaVAE(nn.Module):
     """Vanilla VAE"""
     def __init__(self, bottleneck_dim=256):
         super().__init__()
+        self.name = "VanillaAutoencoder"
         self.encoder = Encoder(bottleneck_dim)
         self.decoder = Decoder(bottleneck_dim)
     def forward(self, x):
