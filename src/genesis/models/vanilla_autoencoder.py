@@ -66,3 +66,4 @@ class VanillaVAE(nn.Module):
         bottleneck, features = self.encoder(x)
         reconstruction = self.decoder(bottleneck)
         return reconstruction,bottleneck
+

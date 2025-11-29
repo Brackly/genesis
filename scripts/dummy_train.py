@@ -1,7 +1,7 @@
 import torch
 from genesis.models import dummy_model as model
 from genesis.factories.datasets import datasets as dataset
-from genesis.factories import trainers as trainer
+from genesis.trainers import neural_net as trainer
 
 import argparse
 import logging

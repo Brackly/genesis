@@ -5,7 +5,7 @@ import umap
 from genesis.writers.base import BaseWriter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def visualize_bottleneck(model:torch.nn.Module,dataloader:torch.utils.data.DataLoader, writer:BaseWriter|None,epoch: int | None):
+def visualize_bottleneck(model:torch.nn.Module,dataloader:torch.utils.data.DataLoader, writer:BaseWriter|None = None,epoch: int | None=None):
     """Visualize the autoencoder bottleneck representations using UMAP"""
     epoch = 0 if epoch is None else epoch
     bottlenecks = []
@@ -117,4 +117,7 @@ def visualize_bottleneck(model:torch.nn.Module,dataloader:torch.utils.data.DataL
     # Log the figure
     if writer is not None:
         writer.log_figure('Bottleneck/UMAP_visualization', fig, epoch)
-    plt.close(fig)  # Close to free memory
+        plt.close(fig)  # Close to free memory
+    else:
+        return plt
+
